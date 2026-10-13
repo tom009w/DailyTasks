@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.dailytasks.data.TaskItem
 import com.example.dailytasks.ui.TaskViewModel
 import com.example.dailytasks.ui.theme.DailyTasksTheme
 
@@ -61,6 +64,7 @@ fun Greeting(
 ) {
     var taskText by remember { mutableStateOf("") }
     val tasks by viewModel.tasks.collectAsState()
+    var taskToDelete by remember { mutableStateOf<TaskItem?>(null) }
 
     fun handleAddTask() {
         if (taskText.isNotBlank()) {
@@ -135,7 +139,7 @@ fun Greeting(
                                 .weight(1f)
                         )
                         IconButton(
-                            onClick = { viewModel.deleteTask(task) }
+                            onClick = { taskToDelete = task }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -146,6 +150,31 @@ fun Greeting(
                 }
             }
         }
+    }
+
+    taskToDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { taskToDelete = null },
+            title = { Text("Delete this task?") },
+            text = { Text("Are you sure you want to delete this task?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteTask(task)
+                        taskToDelete = null
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { taskToDelete = null }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
