@@ -27,3 +27,4 @@ key.properties
 # Kotlin and build output
 .kotlin/
 .idea/
+/app/release/
