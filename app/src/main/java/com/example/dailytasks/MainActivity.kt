@@ -1,9 +1,19 @@
 package com.example.dailytasks
 
+import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,13 +43,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.dailytasks.data.TaskItem
 import com.example.dailytasks.ui.TaskViewModel
 import com.example.dailytasks.ui.theme.DailyTasksTheme
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,6 +81,34 @@ fun Greeting(
     var taskText by remember { mutableStateOf("") }
     val tasks by viewModel.tasks.collectAsState()
     var taskToDelete by remember { mutableStateOf<TaskItem?>(null) }
+    var taskForReminderDialog by remember { mutableStateOf<TaskItem?>(null) }
+
+    val context = LocalContext.current
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+        if (!isGranted) {
+            Toast.makeText(
+                context,
+                "Notification permission denied. Enable it in App Settings to receive task reminders.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     fun handleAddTask() {
         if (taskText.isNotBlank()) {
@@ -111,7 +155,12 @@ fun Greeting(
         ) {
             items(tasks, key = { it.id }) { task ->
                 Card(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { viewModel.toggleTask(task, !task.isCompleted, context) },
+                            onLongClick = { taskForReminderDialog = task }
+                        )
                 ) {
                     Row(
                         modifier = Modifier
@@ -122,22 +171,32 @@ fun Greeting(
                         Checkbox(
                             checked = task.isCompleted,
                             onCheckedChange = { isChecked ->
-                                viewModel.toggleTask(task, isChecked)
+                                viewModel.toggleTask(task, isChecked, context)
                             }
                         )
-                        Text(
-                            text = task.text,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                textDecoration = if (task.isCompleted) {
-                                    TextDecoration.LineThrough
-                                } else {
-                                    TextDecoration.None
-                                }
-                            ),
+                        Column(
                             modifier = Modifier
                                 .padding(start = 8.dp)
                                 .weight(1f)
-                        )
+                        ) {
+                            Text(
+                                text = task.text,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    textDecoration = if (task.isCompleted) {
+                                        TextDecoration.LineThrough
+                                    } else {
+                                        TextDecoration.None
+                                    }
+                                )
+                            )
+                            if (task.reminderTimeMillis != null && task.reminderTimeMillis > System.currentTimeMillis()) {
+                                Text(
+                                    text = "Reminder: ${formatReminderTime(task.reminderTimeMillis)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = { taskToDelete = task }
                         ) {
@@ -160,7 +219,7 @@ fun Greeting(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteTask(task)
+                        viewModel.deleteTask(task, context)
                         taskToDelete = null
                     }
                 ) {
@@ -176,6 +235,103 @@ fun Greeting(
             }
         )
     }
+
+    taskForReminderDialog?.let { task ->
+        val hasReminder = task.reminderTimeMillis != null && task.reminderTimeMillis > System.currentTimeMillis()
+        val reminderText = task.reminderTimeMillis?.let {
+            if (it > System.currentTimeMillis()) "Current reminder:\n${formatReminderTime(it)}" else null
+        } ?: "No reminder set for this task."
+
+        AlertDialog(
+            onDismissRequest = { taskForReminderDialog = null },
+            title = { Text("Task Reminder") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Task: ${task.text}")
+                    Text(reminderText)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        taskForReminderDialog = null
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            showDateTimePicker(context, task.reminderTimeMillis) { selectedMillis ->
+                                viewModel.setReminder(task, selectedMillis, context)
+                            }
+                        }
+                    }
+                ) {
+                    Text(if (hasReminder) "Change Reminder" else "Set Reminder")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasReminder) {
+                        TextButton(
+                            onClick = {
+                                viewModel.cancelReminder(task, context)
+                                taskForReminderDialog = null
+                            }
+                        ) {
+                            Text("Cancel Reminder")
+                        }
+                    }
+                    TextButton(
+                        onClick = { taskForReminderDialog = null }
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        )
+    }
+}
+
+fun formatReminderTime(millis: Long): String {
+    val formatter = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.getDefault())
+    return formatter.format(Date(millis))
+}
+
+fun showDateTimePicker(
+    context: Context,
+    initialMillis: Long?,
+    onDateTimeSelected: (Long) -> Unit
+) {
+    val calendar = Calendar.getInstance()
+    if (initialMillis != null && initialMillis > System.currentTimeMillis()) {
+        calendar.timeInMillis = initialMillis
+    }
+
+    DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            TimePickerDialog(
+                context,
+                { _, hourOfDay, minute ->
+                    calendar.set(year, month, dayOfMonth, hourOfDay, minute, 0)
+                    val selectedMillis = calendar.timeInMillis
+                    if (selectedMillis <= System.currentTimeMillis()) {
+                        Toast.makeText(
+                            context,
+                            "Cannot set reminder in the past",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        onDateTimeSelected(selectedMillis)
+                    }
+                },
+                calendar.get(Calendar.HOUR_OF_DAY),
+                calendar.get(Calendar.MINUTE),
+                false
+            ).show()
+        },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 @Preview(showBackground = true)
