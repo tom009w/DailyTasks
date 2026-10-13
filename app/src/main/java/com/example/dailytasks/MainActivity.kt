@@ -86,14 +86,11 @@ fun Greeting(
     val context = LocalContext.current
     var hasNotificationPermission by remember {
         mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
         )
     }
 
@@ -190,8 +187,9 @@ fun Greeting(
                                 )
                             )
                             if (task.reminderTimeMillis != null && task.reminderTimeMillis > System.currentTimeMillis()) {
+                                val label = if (task.isDailyReminder) "Daily" else "Reminder"
                                 Text(
-                                    text = "Reminder: ${formatReminderTime(task.reminderTimeMillis)}",
+                                    text = "$label: ${formatReminderTime(task.reminderTimeMillis)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -239,37 +237,73 @@ fun Greeting(
     taskForReminderDialog?.let { task ->
         val hasReminder = task.reminderTimeMillis != null && task.reminderTimeMillis > System.currentTimeMillis()
         val reminderText = task.reminderTimeMillis?.let {
-            if (it > System.currentTimeMillis()) "Current reminder:\n${formatReminderTime(it)}" else null
+            if (it > System.currentTimeMillis()) {
+                val typeStr = if (task.isDailyReminder) "Daily reminder" else "One-time reminder"
+                "Current $typeStr:\n${formatReminderTime(it)}"
+            } else null
         } ?: "No reminder set for this task."
 
+        var showTypeSelection by remember { mutableStateOf(false) }
+
         AlertDialog(
-            onDismissRequest = { taskForReminderDialog = null },
+            onDismissRequest = { taskForReminderDialog = null; showTypeSelection = false },
             title = { Text("Task Reminder") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Task: ${task.text}")
                     Text(reminderText)
+
+                    if (showTypeSelection) {
+                        Text("Select reminder type:", style = MaterialTheme.typography.titleSmall)
+                        Button(
+                            onClick = {
+                                taskForReminderDialog = null
+                                showTypeSelection = false
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    showOneTimeDateTimePicker(context, task.reminderTimeMillis) { selectedMillis ->
+                                        viewModel.setReminder(task, selectedMillis, isDaily = false, context)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("One-time reminder")
+                        }
+                        Button(
+                            onClick = {
+                                taskForReminderDialog = null
+                                showTypeSelection = false
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    showDailyTimePicker(context) { selectedMillis ->
+                                        viewModel.setReminder(task, selectedMillis, isDaily = true, context)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Daily reminder")
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        taskForReminderDialog = null
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            showDateTimePicker(context, task.reminderTimeMillis) { selectedMillis ->
-                                viewModel.setReminder(task, selectedMillis, context)
-                            }
+                if (!showTypeSelection) {
+                    TextButton(
+                        onClick = {
+                            showTypeSelection = true
                         }
+                    ) {
+                        Text(if (hasReminder) "Change Reminder" else "Set Reminder")
                     }
-                ) {
-                    Text(if (hasReminder) "Change Reminder" else "Set Reminder")
                 }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (hasReminder) {
+                    if (hasReminder && !showTypeSelection) {
                         TextButton(
                             onClick = {
                                 viewModel.cancelReminder(task, context)
@@ -280,7 +314,10 @@ fun Greeting(
                         }
                     }
                     TextButton(
-                        onClick = { taskForReminderDialog = null }
+                        onClick = {
+                            taskForReminderDialog = null
+                            showTypeSelection = false
+                        }
                     ) {
                         Text("Close")
                     }
@@ -295,7 +332,7 @@ fun formatReminderTime(millis: Long): String {
     return formatter.format(Date(millis))
 }
 
-fun showDateTimePicker(
+fun showOneTimeDateTimePicker(
     context: Context,
     initialMillis: Long?,
     onDateTimeSelected: (Long) -> Unit
@@ -331,6 +368,32 @@ fun showDateTimePicker(
         calendar.get(Calendar.YEAR),
         calendar.get(Calendar.MONTH),
         calendar.get(Calendar.DAY_OF_MONTH)
+    ).show()
+}
+
+fun showDailyTimePicker(
+    context: Context,
+    onTimeSelected: (Long) -> Unit
+) {
+    val calendar = Calendar.getInstance()
+    TimePickerDialog(
+        context,
+        { _, hourOfDay, minute ->
+            val now = Calendar.getInstance()
+            val target = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, hourOfDay)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            if (target.timeInMillis <= now.timeInMillis) {
+                target.add(Calendar.DAY_OF_YEAR, 1)
+            }
+            onTimeSelected(target.timeInMillis)
+        },
+        calendar.get(Calendar.HOUR_OF_DAY),
+        calendar.get(Calendar.MINUTE),
+        false
     ).show()
 }
 

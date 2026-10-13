@@ -8,11 +8,18 @@ import com.example.dailytasks.receiver.TaskReminderReceiver
 
 object TaskReminderScheduler {
 
-    fun scheduleReminder(context: Context, taskId: String, taskText: String, triggerAtMillis: Long) {
+    fun scheduleReminder(
+        context: Context,
+        taskId: String,
+        taskText: String,
+        triggerAtMillis: Long,
+        isDaily: Boolean
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, TaskReminderReceiver::class.java).apply {
             putExtra("TASK_ID", taskId)
             putExtra("TASK_TEXT", taskText)
+            putExtra("IS_DAILY", isDaily)
         }
         val requestCode = taskId.hashCode()
         val pendingIntent = PendingIntent.getBroadcast(

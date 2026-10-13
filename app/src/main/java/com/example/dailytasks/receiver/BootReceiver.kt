@@ -20,13 +20,28 @@ class BootReceiver : BroadcastReceiver() {
                     val tasks = repository.tasksFlow.first()
                     val currentTime = System.currentTimeMillis()
                     for (task in tasks) {
-                        if (!task.isCompleted && task.reminderTimeMillis != null && task.reminderTimeMillis > currentTime) {
-                            TaskReminderScheduler.scheduleReminder(
-                                context.applicationContext,
-                                task.id,
-                                task.text,
-                                task.reminderTimeMillis
-                            )
+                        if ((!task.isCompleted && (task.reminderTimeMillis != null))) {
+                            var triggerTime = task.reminderTimeMillis
+                            if (task.isDailyReminder) {
+                                while (triggerTime <= currentTime) {
+                                    triggerTime += 24 * 60 * 60 * 1000
+                                }
+                                if (triggerTime != task.reminderTimeMillis) {
+                                    val updatedTasks = tasks.map {
+                                        if (it.id == task.id) it.copy(reminderTimeMillis = triggerTime) else it
+                                    }
+                                    repository.saveTasks(updatedTasks)
+                                }
+                            }
+                            if (triggerTime > currentTime) {
+                                TaskReminderScheduler.scheduleReminder(
+                                    context.applicationContext,
+                                    task.id,
+                                    task.text,
+                                    triggerTime,
+                                    isDaily = task.isDailyReminder,
+                                )
+                            }
                         }
                     }
                 } catch (e: Exception) {

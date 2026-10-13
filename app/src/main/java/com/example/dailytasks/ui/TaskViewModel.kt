@@ -38,7 +38,8 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             if (it.id == task.id) {
                 it.copy(
                     isCompleted = isCompleted,
-                    reminderTimeMillis = if (isCompleted) null else it.reminderTimeMillis
+                    reminderTimeMillis = null,
+                    isDailyReminder = false
                 )
             } else {
                 it
@@ -46,11 +47,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             repository.saveTasks(updatedList)
-            if (isCompleted) {
-                TaskReminderScheduler.cancelReminder(context, task.id)
-            } else if (task.reminderTimeMillis != null && task.reminderTimeMillis > System.currentTimeMillis()) {
-                TaskReminderScheduler.scheduleReminder(context, task.id, task.text, task.reminderTimeMillis)
-            }
+            TaskReminderScheduler.cancelReminder(context, task.id)
         }
     }
 
@@ -62,10 +59,13 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setReminder(task: TaskItem, reminderTimeMillis: Long, context: Context) {
+    fun setReminder(task: TaskItem, reminderTimeMillis: Long, isDaily: Boolean, context: Context) {
         val updatedList = tasks.value.map {
             if (it.id == task.id) {
-                it.copy(reminderTimeMillis = reminderTimeMillis)
+                it.copy(
+                    reminderTimeMillis = reminderTimeMillis,
+                    isDailyReminder = isDaily
+                )
             } else {
                 it
             }
@@ -73,7 +73,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.saveTasks(updatedList)
             if (reminderTimeMillis > System.currentTimeMillis()) {
-                TaskReminderScheduler.scheduleReminder(context, task.id, task.text, reminderTimeMillis)
+                TaskReminderScheduler.scheduleReminder(context, task.id, task.text, reminderTimeMillis, isDaily)
             }
         }
     }
@@ -81,7 +81,10 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelReminder(task: TaskItem, context: Context) {
         val updatedList = tasks.value.map {
             if (it.id == task.id) {
-                it.copy(reminderTimeMillis = null)
+                it.copy(
+                    reminderTimeMillis = null,
+                    isDailyReminder = false
+                )
             } else {
                 it
             }

@@ -40,12 +40,18 @@ class TaskRepository(private val appContext: Context) {
                 } else {
                     null
                 }
+                val isDaily = if (obj.has("isDailyReminder") && !obj.isNull("isDailyReminder")) {
+                    obj.getBoolean("isDailyReminder")
+                } else {
+                    false
+                }
                 list.add(
                     TaskItem(
                         id = obj.getString("id"),
                         text = obj.getString("text"),
                         isCompleted = obj.getBoolean("isCompleted"),
                         reminderTimeMillis = reminderTime,
+                        isDailyReminder = isDaily,
                     )
                 )
             }
@@ -57,7 +63,7 @@ class TaskRepository(private val appContext: Context) {
 
     private fun parseTasksToJson(tasks: List<TaskItem>): String {
         val jsonArray = JSONArray()
-        for ((id, text, isCompleted, reminderTimeMillis) in tasks) {
+        for ((id, text, isCompleted, reminderTimeMillis, isDailyReminder) in tasks) {
             val obj = JSONObject()
             obj.put("id", id)
             obj.put("text", text)
@@ -65,6 +71,7 @@ class TaskRepository(private val appContext: Context) {
             if (reminderTimeMillis != null) {
                 obj.put("reminderTimeMillis", reminderTimeMillis)
             }
+            obj.put("isDailyReminder", isDailyReminder)
             jsonArray.put(obj)
         }
         return jsonArray.toString()

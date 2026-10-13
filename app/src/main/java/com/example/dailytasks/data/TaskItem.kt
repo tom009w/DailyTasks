@@ -7,4 +7,5 @@ data class TaskItem(
     val text: String,
     val isCompleted: Boolean = false,
     val reminderTimeMillis: Long? = null,
+    val isDailyReminder: Boolean = false,
 )
