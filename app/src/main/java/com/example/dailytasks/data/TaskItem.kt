@@ -6,4 +6,5 @@ data class TaskItem(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val isCompleted: Boolean = false,
+    val reminderTimeMillis: Long? = null,
 )
